@@ -1,0 +1,258 @@
+# 📚 TP — IA in Bioscience : From Data Cleaning to Machine Learning
+
+> **Type :** TP étudié et archivé — pas de ma création  
+> **Source :** Practical Work — cours IA in Bioscience  
+> **Contexte :** Machine Learning appliqué à un dataset biologique  
+> **Dataset :** AVONET — mesures morphologiques de ~11 000 espèces d'oiseaux  
+> **Environnement :** Jupyter Notebook / Google Colab  
+> **Langage :** Python 3
+
+---
+
+## ⚠️ Note importante
+
+Ce notebook **n'est pas de ma création**. Il s'agit d'un travail pratique d'un cours universitaire que j'ai suivi et archivé ici pour :
+- Garder une trace structurée de ce que j'ai appris
+- Pouvoir réviser le workflow ML complet
+- Documenter ma progression en data science
+
+👉 **Mes propres fonctions** extraites et adaptées de ce TP sont dans le dépôt [`ml-data-cleaning-skills`](https://github.com/TON_USERNAME/ml-data-cleaning-skills)
+
+---
+
+## 🐦 Le Dataset — AVONET
+
+AVONET est une base de données qui contient des **mesures morphologiques** (taille du bec, longueur des ailes, masse...) et des **données écologiques** (niche trophique, mode de vie, habitat...) pour ~11 000 espèces d'oiseaux.
+
+**35 colonnes au total :**
+- `Species3` : nom de l'espèce
+- `Beak.Length_Culmen`, `Beak.Width`, `Beak.Depth` : dimensions du bec
+- `Wing.Length`, `Kipps.Distance`, `Tail.Length`, `Tarsus.Length` : morphologie
+- `Mass` : masse corporelle (variable cible pour la régression)
+- `Trophic.Level` : Carnivore / Herbivore / Omnivore
+- `Trophic.Niche` : ce que l'oiseau mange (Invertivore, Frugivore, Granivore...)  ← **variable cible pour la classification**
+- `Primary.Lifestyle` : Generalist / Insessorial / Aerial / Aquatic / Terrestrial
+- `Habitat` : type d'habitat (Forest, Shrubland, Grassland...)
+- `Migration` : type de migration (1, 2, 3)
+- `Centroid.Latitude/Longitude` : coordonnées géographiques
+
+---
+
+## 🗺️ Plan du TP — Ce que j'ai appris
+
+### PARTIE 1 — Analyse exploratoire (EDA)
+Avant de faire du ML, on explore les données pour les comprendre.
+
+- `df.head()` → voir les premières lignes
+- `df.info()` → types, valeurs manquantes, taille
+- `df.describe()` → stats (min, max, moyenne, quartiles)
+- `df.nunique()` → nombre de valeurs uniques par colonne
+- `df.hist()` → histogrammes de distribution
+
+**Questions posées dans le TP :**
+- Les attributs sont-ils sur la même échelle ?
+- Y a-t-il des outliers ?
+- Quelles colonnes ont des valeurs manquantes ?
+
+---
+
+### PARTIE 2 — Nettoyage des données
+
+**Suppression de colonnes inutiles :**
+```python
+df = df.drop(columns=['Family3', 'Order3', 'Total.individuals', ...])
+```
+Colonnes supprimées : métadonnées, colonnes de comptage, sources bibliographiques.
+
+**Gestion des NaN :**
+```python
+df = df.dropna()  # supprime les lignes avec valeurs manquantes
+```
+Stratégie choisie : suppression (car peu de NaN par rapport au total).
+
+**Correction de typo :**
+```python
+df['Habitat'] = df['Habitat'].replace('Shrubland ', 'Shrubland')
+```
+'Shrubland ' avec un espace traîleur = catégorie différente de 'Shrubland' !
+
+**Transformation d'une variable continue en catégories :**
+```python
+df['Centroid.Longitude'] = pd.cut(df['Centroid.Longitude'],
+                                  bins=[-200, -25, 60, np.inf],
+                                  labels=['West', 'Greenwich', 'East'])
+```
+La longitude est trimodale → plus logique en 3 catégories géographiques.
+
+---
+
+### PARTIE 3 — Analyse des corrélations
+
+```python
+corr_matrix = df.corr(numeric_only=True)
+sns.heatmap(corr_matrix, annot=True, cmap='viridis')
+```
+
+**Ce qu'on cherche :**
+- Quels attributs sont corrélés à la cible (`Mass`) ?
+- Quels attributs sont corrélés *entre eux* (redondance) ?
+
+**Découvertes :**
+- `Wing.Length`, `Tarsus.Length`, `Beak.Length_Culmen` → fortement corrélés à `Mass`
+- `Beak.Length_Nares`, `Beak.Width`, `Beak.Depth` → redondants avec `Beak.Length_Culmen`
+- `Min.Latitude` et `Max.Latitude` → redondants avec `Centroid.Latitude`
+
+---
+
+### PARTIE 4 — Feature Engineering
+
+Création de nouvelles features (ratios) plus informatives :
+```python
+df['kipps_on_winglength']   = df['Kipps.Distance'] / df['Wing.Length']
+df['Beak.nares_to_culmen']  = df['Beak.Length_Nares'] / df['Beak.Length_Culmen']
+df['Beak.width_to_lculmen'] = df['Beak.Width'] / df['Beak.Length_Culmen']
+df['Beak.depth_to_lculmen'] = df['Beak.Depth'] / df['Beak.Length_Culmen']
+```
+
+Idée : la **forme** du bec (ratio largeur/longueur) est plus informative que sa taille brute.
+
+---
+
+### PARTIE 5 — Préparation des données (Pipeline ML)
+
+**Split train / test (stratifié) :**
+```python
+split = StratifiedShuffleSplit(n_splits=1, test_size=0.25, random_state=42)
+```
+Stratifié sur `Trophic.Niche` pour garantir la représentation de chaque classe.
+
+**Standardisation :**
+```python
+scaler = StandardScaler()
+X_train_std = scaler.fit_transform(X_train_np)  # fit + transform sur train
+X_test_std  = scaler.transform(X_test_np)        # transform seulement sur test !
+```
+⚠️ Le scaler doit être fitté UNIQUEMENT sur le train pour éviter le data leakage.
+
+**Encodage One-Hot :**
+```python
+habitat_cat_1hot = pd.get_dummies(X_train['Habitat'])
+```
+Chaque catégorie → une colonne binaire (1 = appartient à la catégorie, 0 = non).
+
+---
+
+### PARTIE 6 — Modèles de régression (prédire la masse)
+
+| Modèle | Résultat | Note |
+|---|---|---|
+| Régression linéaire | RMSE élevé | Baseline simple |
+| Decision Tree | Similaire ou pire | Risque d'overfitting |
+| SVR | Plus lent, pas meilleur | Adapté aux petits datasets |
+
+💡 **Constat** : Les résultats de régression sont décevants. Prédire la masse d'un oiseau à partir de ses mesures morphologiques est difficile avec ces features.
+
+---
+
+### PARTIE 7 — Modèles de classification (prédire la niche trophique)
+
+Changement de question : **prédire `Trophic.Niche`** (ce que mange l'oiseau) plutôt que la masse.
+
+| Modèle | Résultat |
+|---|---|
+| Decision Tree (max_depth=4) | Déséquilibré entre classes |
+| Random Forest (max_depth=10) | Meilleur |
+| MLP scikit-learn | Comparable |
+| Réseau de neurones TensorFlow | Résultats variables selon hyperparamètres |
+
+**Métriques d'évaluation :**
+- **Accuracy** : % de bonnes prédictions global
+- **Precision** : parmi les prédictions "classe X", combien sont vraiment X ?
+- **Recall** : parmi les vrais X, combien ont été détectés ?
+- **F1-score** : moyenne harmonique de precision et recall
+- **Confusion matrix** : tableau montrant les erreurs de classification
+
+---
+
+### PARTIE 8 — TensorFlow : normalisation et encodage dans le modèle
+
+Au lieu de prétraiter les données à l'avance (dans Pandas), on peut intégrer
+la normalisation et l'encodage **directement dans le modèle** via des couches Keras :
+
+```python
+tf.keras.layers.Normalization()   # normalise automatiquement
+tf.keras.layers.StringLookup()    # encode les strings en entiers
+tf.keras.layers.CategoryEncoding() # encode en one-hot
+```
+
+**Early Stopping :**
+```python
+es = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=20)
+```
+Arrête l'entraînement si la validation loss ne s'améliore plus.
+
+---
+
+## 🗂️ Structure du dépôt
+
+```
+tp-ia-bioscience-data-cleaning/
+│
+├── 📄 README.md                                     ← Ce fichier
+│
+└── 📁 notebooks/
+    └── PracticalWork_DataCleaning_clean.ipynb       ← Notebook nettoyé
+```
+
+> ⚠️ Le fichier `AVONET.csv` (~3MB) n'est pas inclus — trop lourd pour GitHub.
+> Télécharge-le sur le site officiel AVONET ou via Moodle du cours.
+
+---
+
+## 🚀 Comment exécuter
+
+1. Ouvre [colab.research.google.com](https://colab.research.google.com)
+2. **File → Upload notebook** → upload `PracticalWork_DataCleaning_clean.ipynb`
+3. Upload le fichier `AVONET.csv` quand demandé
+4. **Runtime → Run all**
+
+---
+
+## 📦 Dépendances
+
+```
+pandas >= 1.3
+numpy >= 1.21
+matplotlib >= 3.4
+seaborn >= 0.11
+scikit-learn >= 0.24
+tensorflow >= 2.10
+```
+
+---
+
+## 📝 Mes notes personnelles
+
+> *À remplir au fil de mes révisions*
+
+**Concepts que j'ai bien compris :**
+- [ ] Data leakage : pourquoi le scaler doit être fitté sur train seulement
+- [ ] Différence split aléatoire vs stratifié
+- [ ] One-hot encoding vs label encoding : quand utiliser lequel
+- [ ] Overfitting : comment le détecter avec les courbes de loss
+
+**Ce que je veux approfondir :**
+- [ ] Cross-validation (k-fold)
+- [ ] Hyperparameter tuning (GridSearchCV)
+- [ ] Pipeline scikit-learn pour automatiser le preprocessing
+- [ ] Gestion des datasets très déséquilibrés
+
+---
+
+## 🔗 Ressources
+
+- 📘 [Documentation pandas](https://pandas.pydata.org/docs/)
+- 📘 [Documentation scikit-learn](https://scikit-learn.org/stable/)
+- 📘 [Documentation TensorFlow/Keras](https://www.tensorflow.org/api_docs/python/tf/keras)
+- 📘 [Dataset AVONET officiel](https://figshare.com/s/b990722d72a26b5bfead)
+- 📘 [Kaggle — apprendre le ML par la pratique](https://www.kaggle.com)
