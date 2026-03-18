@@ -18,6 +18,7 @@ ml-data-cleaning-skills/
 │   └── ml_models.py              ← Modèles ML entraînables et évaluables
 │
 └── 📁 notebooks/                 ← Notebooks de référence (TP original, non personnel)
+    ├──readmefile
     └── PracticalWork_DataCleaning_clean.ipynb
 ```
 
