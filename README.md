@@ -1,5 +1,5 @@
-🛠️ ML Data Cleaning Skills — Mes fonctions personnelles
-
+**🛠️ ML Data Cleaning Skills — Mes fonctions personnelles
+**
 Ce que c'est : Mes outils réutilisables pour nettoyer des données et entraîner des modèles ML
 
 
